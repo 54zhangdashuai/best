@@ -1,54 +1,121 @@
-# 部署指南 (Deployment Guide)
+# Deployment Guide (部署指南)
 
-## 1. 环境要求
-- 服务器系统：Ubuntu 22.04 LTS (推荐)
-- 软件依赖：Docker, Docker Compose
-- 端口要求：
-  - 80 (HTTP) - 前端访问
-  - 3000 (API) - 后端服务 (仅内部或通过 Nginx 代理访问)
+**System Name**: 是为科技年会最佳节目实时投票系统
+**Project Structure**: Frontend (React/Vite) + Backend (Express/SQLite) + Docker
 
-## 2. 部署步骤
+---
 
-### 第一步：克隆代码到服务器
+## Part 1: Local Deployment (本地部署)
+
+Suitable for development and testing on your local machine (Windows/Mac/Linux).
+
+### 1. Prerequisites (准备工作)
+- **Docker Desktop**: Ensure Docker Desktop is installed and running.
+- **Git**: Ensure Git is installed.
+
+### 2. Deployment Steps (部署步骤)
+
+#### Step 1: Clone Repository
 ```bash
-git clone <your-repo-url>
-cd <project-folder>
+git clone <your-repo-url> best
+cd best
 ```
 
-### 第二步：启动服务
-使用 Docker Compose 一键启动所有服务：
+#### Step 2: Start Services
+Use Docker Compose to build and start both frontend and backend services.
 ```bash
 docker-compose up -d --build
 ```
 
-此命令将：
-1. 构建后端镜像 (nebulavote-backend) 并启动容器。
-2. 构建前端镜像 (nebulavote-frontend) 并启动容器。
-3. 自动配置 Nginx 反向代理。
+#### Step 3: Verify Deployment
+Check if containers are running:
+```bash
+docker ps
+```
+You should see `nebulavote-frontend` and `nebulavote-backend`.
 
-### 第三步：验证部署
-- **用户投票端**：访问 `http://<服务器IP>/vote`
-- **大屏展示端**：访问 `http://<服务器IP>/leaderboard`
-- **管理后台**：访问 `http://<服务器IP>/admin` (默认密码: 54zds)
+### 3. Access Addresses (本地访问地址)
 
-## 3. 数据持久化
-- 数据库文件存储在 `./backend/data/database.sqlite`。
-- 该目录已挂载到 Docker 容器中，重启容器不会丢失数据。
-- 若要重置数据，可在管理后台点击“重置数据”按钮。
+| Role | URL | Note |
+| :--- | :--- | :--- |
+| **Mobile Voting** | `http://localhost/vote` | 模拟手机端访问 |
+| **Big Screen** | `http://localhost/leaderboard` | 模拟大屏展示 |
+| **Admin Panel** | `http://localhost/admin` | 密码: `54zds` |
 
-## 4. 常见问题排查
+> **Note**: If port 80 is occupied on your local machine, you may need to modify `docker-compose.yml` to map to a different port (e.g., `8080:80`) and access via `http://localhost:8080/...`.
 
-### 无法访问前端页面
-- 检查服务器防火墙是否放行 80 端口。
-- 检查容器状态：`docker-compose ps`
+---
 
-### API 请求失败
-- 检查后端容器是否正常运行。
-- 查看后端日志：`docker-compose logs backend`
+## Part 2: Server Deployment (服务器部署)
 
-### 修改配置后不生效
-- 如果修改了代码，需要重新构建镜像：
-  ```bash
-  docker-compose down
-  docker-compose up -d --build
-  ```
+Target Server: Tencent Cloud Ubuntu 22.04 LTS
+Server IP: `122.51.60.20`
+
+### 1. Prerequisites (准备工作)
+Ensure Docker and Git are installed on the server.
+```bash
+sudo apt update
+sudo apt install git docker.io docker-compose -y
+```
+
+### 2. Deployment Steps (部署步骤)
+
+#### Step 1: Clone/Pull Repository
+```bash
+# First time setup
+git clone <your-repo-url> best
+cd best
+
+# Or if already cloned (Updating code)
+cd best
+git pull
+```
+
+#### Step 2: Build and Start Services
+IMPORTANT: Whenever you update the code, you must rebuild the containers to apply changes (especially for the backend TypeScript compilation).
+```bash
+# Stop existing containers (optional but recommended for clean restart)
+sudo docker-compose down
+
+# Build and start in detached mode
+sudo docker-compose up -d --build
+```
+
+#### Step 3: Verify Deployment
+Check if containers are running:
+```bash
+sudo docker ps
+```
+You should see `nebulavote-frontend` (Port 80) and `nebulavote-backend` (Port 3000).
+
+### 3. Access Addresses (服务器访问地址)
+
+| Role | URL | Note |
+| :--- | :--- | :--- |
+| **Mobile Voting** | `http://122.51.60.20/vote` | 发送给员工的链接 |
+| **Big Screen** | `http://122.51.60.20/leaderboard` | 投屏使用 |
+| **Admin Panel** | `http://122.51.60.20/admin` | 密码: `54zds` |
+
+---
+
+## Part 3: Feature Guide (功能说明)
+
+### 1. Admin Control (后台管理)
+Login to `http://<ip>/admin` to manage the system.
+
+- **Stop/Start Voting (停止/开始投票)**: 
+  - Located in the "System Settings" (系统设置) panel.
+  - Clicking "Stop Voting" (停止投票) will immediately disable the voting interface for all users.
+  - Users will see a red banner "投票通道已暂时关闭" (Voting Closed) and cannot submit votes.
+  - Clicking "Start Voting" (开始投票) will re-enable voting.
+  
+- **Reset Data (重置数据)**:
+  - Clicking "Reset Data" (重置数据) will clear all votes and reset vote counts to zero.
+  - **Note**: Resetting data will automatically re-enable voting (set to "Start" state).
+
+- **Vote Limit (投票限制)**:
+  - You can set how many programs a user must select (e.g., Select exactly 3 programs).
+
+### 2. Voting Page (投票页)
+- Users open the link, select the required number of programs, and click submit.
+- If voting is stopped by admin, the interface becomes read-only with a visual warning.

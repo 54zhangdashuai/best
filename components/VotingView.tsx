@@ -6,16 +6,19 @@ import { Candidate } from '../types';
 interface VotingViewProps {
   candidates: Candidate[];
   voteLimit: number;
+  votingEnabled: boolean;
   onVote: (ids: string[]) => Promise<void>;
 }
 
-const VotingView: React.FC<VotingViewProps> = ({ candidates, voteLimit, onVote }) => {
+const VotingView: React.FC<VotingViewProps> = ({ candidates, voteLimit, votingEnabled, onVote }) => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const toggleSelection = (id: string) => {
+    if (!votingEnabled) return; // Prevent selection if voting is disabled
+
     if (selectedIds.includes(id)) {
       setSelectedIds(prev => prev.filter(pid => pid !== id));
     } else {
@@ -75,24 +78,32 @@ const VotingView: React.FC<VotingViewProps> = ({ candidates, voteLimit, onVote }
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-32">
       {/* Mobile Header */}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 py-4 mb-6 shadow-sm">
-        <h1 className="text-xl font-bold text-slate-900 text-center">年会节目投票</h1>
-        <p className="text-xs text-slate-500 text-center mt-1">
-            请选择 <span className="font-bold text-blue-600">{voteLimit}</span> 个最喜爱的节目
-        </p>
+      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
+        {!votingEnabled && (
+            <div className="bg-red-500 text-white text-center py-2 text-sm font-bold animate-pulse">
+                投票通道已暂时关闭
+            </div>
+        )}
+        <div className="px-4 py-4">
+            <h1 className="text-xl font-bold text-slate-900 text-center">年会节目投票</h1>
+            <p className="text-xs text-slate-500 text-center mt-1">
+                请选择 <span className="font-bold text-blue-600">{voteLimit}</span> 个最喜爱的节目
+            </p>
+        </div>
       </div>
 
-      <div className="container mx-auto px-4 max-w-md">
+      <div className="container mx-auto px-4 max-w-md mt-6">
         <div className="grid gap-3">
           {displayList.map((candidate) => {
             const isSelected = selectedIds.includes(candidate.id);
             return (
             <motion.div 
               key={candidate.id}
-              whileTap={{ scale: 0.98 }}
+              whileTap={votingEnabled ? { scale: 0.98 } : {}}
               onClick={() => toggleSelection(candidate.id)}
               className={`
-                p-4 rounded-xl border shadow-sm flex items-center justify-between relative overflow-hidden cursor-pointer transition-all
+                p-4 rounded-xl border shadow-sm flex items-center justify-between relative overflow-hidden transition-all
+                ${!votingEnabled ? 'opacity-60 grayscale cursor-not-allowed bg-slate-100' : 'cursor-pointer'}
                 ${isSelected ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200'}
               `}
             >
@@ -130,16 +141,16 @@ const VotingView: React.FC<VotingViewProps> = ({ candidates, voteLimit, onVote }
                 已选: <span className="font-bold text-slate-900">{selectedIds.length}</span> / {voteLimit}
             </div>
             <button
-                disabled={selectedIds.length !== voteLimit || isSubmitting}
+                disabled={!votingEnabled || selectedIds.length !== voteLimit || isSubmitting}
                 onClick={handleSubmit}
                 className={`
                     flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white shadow-lg transition-all
-                    ${selectedIds.length === voteLimit && !isSubmitting
+                    ${votingEnabled && selectedIds.length === voteLimit && !isSubmitting
                         ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-blue-200' 
                         : 'bg-slate-300 cursor-not-allowed'}
                 `}
             >
-                {isSubmitting ? '提交中...' : '确认投票'}
+                {isSubmitting ? '提交中...' : (votingEnabled ? '确认投票' : '暂停投票')}
                 <Vote size={18} />
             </button>
           </div>

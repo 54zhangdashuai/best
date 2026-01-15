@@ -5,12 +5,66 @@ import { Candidate } from './types';
 // Or we can check environment.
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+const safeLocalStorageGet = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalStorageSet = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const fetchJson = async (input: RequestInfo | URL, init?: RequestInit) => {
+  let response: Response;
+  try {
+    response = await fetch(input, init);
+  } catch (err: any) {
+    throw new Error(err?.message || 'Failed to fetch');
+  }
+
+  const rawText = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+
+  let parsed: any = null;
+  if (contentType.includes('application/json')) {
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!response.ok) {
+    const messageFromJson = parsed?.message;
+    const message =
+      messageFromJson ||
+      (rawText ? rawText.slice(0, 200) : '') ||
+      `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  if (contentType.includes('application/json')) {
+    if (parsed == null) {
+      throw new Error('服务器返回了非 JSON 数据');
+    }
+    return parsed;
+  }
+
+  return rawText;
+};
+
 export const api = {
   // Get Programs (Candidates) and Config
-  getPrograms: async (): Promise<{ candidates: Candidate[], config: { vote_count_limit: number } }> => {
-    const response = await fetch(`${API_BASE_URL}/programs`);
-    if (!response.ok) throw new Error('Failed to fetch programs');
-    const json = await response.json();
+  getPrograms: async (): Promise<{ candidates: Candidate[], config: { vote_count_limit: number, voting_enabled: boolean } }> => {
+    const json = await fetchJson(`${API_BASE_URL}/programs`);
     
     // Map backend data to frontend Candidate interface
     const candidates = json.data.programs.map((p: any) => ({
@@ -46,68 +100,60 @@ export const api = {
       }
     }
 
-    const response = await fetch(`${API_BASE_URL}/vote`, {
+    const json = await fetchJson(`${API_BASE_URL}/vote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ programIds, clientId })
     });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json.message || 'Voting failed');
     return json;
   },
 
   // Admin Login
   login: async (password: string) => {
-    const response = await fetch(`${API_BASE_URL}/login`, {
+    const json = await fetchJson(`${API_BASE_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
     });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json.message || 'Login failed');
     
     // Store token
     if (json.token) {
-        localStorage.setItem('admin_token', json.token);
+        safeLocalStorageSet('admin_token', json.token);
     }
     
     return json;
   },
 
   // Admin: Update Settings
-  updateSettings: async (vote_count_limit: number) => {
-    const token = localStorage.getItem('admin_token');
-    const response = await fetch(`${API_BASE_URL}/admin/settings`, {
+  updateSettings: async (vote_count_limit: number, voting_enabled?: boolean) => {
+    const token = safeLocalStorageGet('admin_token');
+    const json = await fetchJson(`${API_BASE_URL}/admin/settings`, {
       method: 'POST',
       headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ vote_count_limit })
+      body: JSON.stringify({ vote_count_limit, voting_enabled })
     });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json.message || 'Update failed');
     return json;
   },
 
   // Admin: Reset Data
   resetData: async () => {
-    const token = localStorage.getItem('admin_token');
-    const response = await fetch(`${API_BASE_URL}/admin/reset`, {
+    const token = safeLocalStorageGet('admin_token');
+    const json = await fetchJson(`${API_BASE_URL}/admin/reset`, {
       method: 'POST',
       headers: {
           'Authorization': `Bearer ${token}`
       }
     });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json.message || 'Reset failed');
     return json;
   },
   
   // Admin: Add Program
   addProgram: async (title: string, performer: string, color: string) => {
-      const token = localStorage.getItem('admin_token');
-      const response = await fetch(`${API_BASE_URL}/admin/programs`, {
+      const token = safeLocalStorageGet('admin_token');
+      const json = await fetchJson(`${API_BASE_URL}/admin/programs`, {
           method: 'POST',
           headers: { 
               'Content-Type': 'application/json',
@@ -115,22 +161,18 @@ export const api = {
           },
           body: JSON.stringify({ title, performer, color })
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.message || 'Add failed');
       return json;
   },
 
   // Admin: Delete Program
   deleteProgram: async (id: string) => {
-      const token = localStorage.getItem('admin_token');
-      const response = await fetch(`${API_BASE_URL}/admin/programs/${id}`, {
+      const token = safeLocalStorageGet('admin_token');
+      const json = await fetchJson(`${API_BASE_URL}/admin/programs/${id}`, {
           method: 'DELETE',
           headers: {
               'Authorization': `Bearer ${token}`
           }
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.message || 'Delete failed');
       return json;
   }
 };

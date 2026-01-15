@@ -89,9 +89,12 @@
 
 ### 2.3 设置投票规则
 *   **URL**: `POST /admin/settings`
-*   **Body**:
+*   **Body** (optional fields):
     ```json
-    { "vote_count_limit": 3 }
+    { 
+      "vote_count_limit": 3,
+      "voting_enabled": true
+    }
     ```
 *   **Response**:
     ```json
@@ -99,7 +102,7 @@
     ```
 
 ### 2.4 重置系统
-清空所有投票数据，将所有节目的 `vote_count` 重置为 0。
+清空所有投票数据，将所有节目的 `vote_count` 重置为 0，并自动开启投票通道。
 
 *   **URL**: `POST /admin/reset`
 *   **Body**: `{}`

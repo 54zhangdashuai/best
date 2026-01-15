@@ -39,6 +39,7 @@ const App: React.FC = () => {
 const VotingPage: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [voteLimit, setVoteLimit] = useState(1);
+  const [votingEnabled, setVotingEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +49,7 @@ const VotingPage: React.FC = () => {
         const { candidates, config } = await api.getPrograms();
         setCandidates(candidates);
         setVoteLimit(config.vote_count_limit);
+        setVotingEnabled(config.voting_enabled);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -74,7 +76,7 @@ const VotingPage: React.FC = () => {
       </div>
   );
 
-  return <VotingView candidates={candidates} voteLimit={voteLimit} onVote={handleVote} />;
+  return <VotingView candidates={candidates} voteLimit={voteLimit} votingEnabled={votingEnabled} onVote={handleVote} />;
 };
 
 const LeaderboardPage: React.FC = () => {
@@ -128,6 +130,7 @@ const AdminPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [voteLimit, setVoteLimit] = useState(1);
+  const [votingEnabled, setVotingEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -155,14 +158,20 @@ const AdminPage: React.FC = () => {
       const ranked = sorted.map((c, i) => ({ ...c, currentRank: i + 1, previousRank: i + 1 }));
       setCandidates(ranked);
       setVoteLimit(config.vote_count_limit);
+      setVotingEnabled(config.voting_enabled);
     } catch (err) {
       console.error(err);
     }
   };
 
   const handleUpdateVoteLimit = async (limit: number) => {
-      await api.updateSettings(limit);
+      await api.updateSettings(limit, votingEnabled);
       setVoteLimit(limit);
+  };
+
+  const handleToggleVoting = async (enabled: boolean) => {
+      await api.updateSettings(voteLimit, enabled);
+      setVotingEnabled(enabled);
   };
 
   const handleReset = async () => {
@@ -204,7 +213,9 @@ const AdminPage: React.FC = () => {
     <AdminView 
       candidates={candidates}
       voteLimit={voteLimit}
+      votingEnabled={votingEnabled}
       onUpdateVoteLimit={handleUpdateVoteLimit}
+      onToggleVoting={handleToggleVoting}
       onReset={handleReset}
       onUpdateCandidate={() => {}} // Not implemented in backend yet
       onAddCandidate={handleAddCandidate}

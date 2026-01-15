@@ -5,7 +5,9 @@ import { Candidate } from '../types';
 interface AdminViewProps {
   candidates: Candidate[];
   voteLimit: number;
+  votingEnabled: boolean;
   onUpdateVoteLimit: (limit: number) => Promise<void>;
+  onToggleVoting: (enabled: boolean) => Promise<void>;
   onReset: () => void;
   onUpdateCandidate: (id: string, updates: Partial<Candidate>) => void;
   onAddCandidate: (data: Omit<Candidate, 'id' | 'votes' | 'currentRank' | 'previousRank'>) => void;
@@ -15,7 +17,9 @@ interface AdminViewProps {
 const AdminView: React.FC<AdminViewProps> = ({ 
   candidates, 
   voteLimit,
+  votingEnabled,
   onUpdateVoteLimit,
+  onToggleVoting,
   onReset,
   onUpdateCandidate,
   onAddCandidate,
@@ -128,6 +132,25 @@ const AdminView: React.FC<AdminViewProps> = ({
                     
                     <div className="space-y-4">
                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                投票开关
+                            </label>
+                            <button
+                                onClick={() => onToggleVoting(!votingEnabled)}
+                                className={`w-full py-2 px-4 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 ${
+                                    votingEnabled 
+                                    ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200' 
+                                    : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                                }`}
+                            >
+                                {votingEnabled ? '⏹ 停止投票' : '▶ 开始投票'}
+                            </button>
+                            <p className="text-xs text-slate-500 mt-1">
+                                {votingEnabled ? '当前允许用户投票' : '当前已暂停投票，用户无法提交'}
+                            </p>
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4">
                             <label className="block text-sm font-medium text-slate-700 mb-1">
                                 每人投票数限制
                             </label>
