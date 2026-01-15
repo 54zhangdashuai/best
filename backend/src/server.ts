@@ -38,27 +38,35 @@ app.get('/', (req, res) => {
 // 1. 获取节目列表 & 系统配置
 app.get('/api/programs', (req, res) => {
   const sqlPrograms = "SELECT * FROM programs";
-  const sqlSettings = "SELECT value FROM settings WHERE key = 'vote_count_limit'";
+  const sqlSettings = "SELECT key, value FROM settings";
 
   db.all(sqlPrograms, [], (err, programs) => {
     if (err) {
       return res.status(500).json({ code: 500, message: err.message });
     }
     
-    db.get(sqlSettings, (err, row: any) => {
+    db.all(sqlSettings, [], (err, rows: any[]) => {
       if (err) {
         return res.status(500).json({ code: 500, message: err.message });
       }
       
-      const voteCountLimit = row ? parseInt(row.value) : 1;
+      const config: any = {
+          vote_count_limit: 1,
+          voting_enabled: true
+      };
+
+      if (rows) {
+          rows.forEach(row => {
+              if (row.key === 'vote_count_limit') config.vote_count_limit = parseInt(row.value);
+              if (row.key === 'voting_enabled') config.voting_enabled = row.value === 'true';
+          });
+      }
       
       res.json({
         code: 0,
         data: {
           programs,
-          config: {
-            vote_count_limit: voteCountLimit
-          }
+          config
         }
       });
     });
@@ -133,15 +141,27 @@ app.post('/api/login', (req, res) => {
 
 // 4. 管理端 - 修改规则
 app.post('/api/admin/settings', authenticateToken, (req, res) => {
-  const { vote_count_limit } = req.body;
+  const { vote_count_limit, voting_enabled } = req.body;
   
-  if (!vote_count_limit || vote_count_limit < 1) {
-    return res.status(400).json({ code: 400, message: "无效的设置值" });
-  }
+  const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
 
-  db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('vote_count_limit', ?)", [vote_count_limit.toString()], (err) => {
-    if (err) return res.status(500).json({ code: 500, message: err.message });
-    res.json({ code: 0, message: "规则已更新" });
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+    try {
+        if (vote_count_limit && vote_count_limit >= 1) {
+             stmt.run('vote_count_limit', vote_count_limit.toString());
+        }
+        if (typeof voting_enabled !== 'undefined') {
+             stmt.run('voting_enabled', voting_enabled.toString());
+        }
+        db.run("COMMIT", () => {
+            stmt.finalize();
+            res.json({ code: 0, message: "规则已更新" });
+        });
+    } catch (error) {
+        db.run("ROLLBACK");
+        res.status(500).json({ code: 500, message: "更新失败" });
+    }
   });
 });
 
@@ -150,6 +170,8 @@ app.post('/api/admin/reset', authenticateToken, (req, res) => {
   db.serialize(() => {
     db.run("DELETE FROM vote_records");
     db.run("UPDATE programs SET vote_count = 0");
+    // 重置后开启投票
+    db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('voting_enabled', 'true')");
     res.json({ code: 0, message: "系统数据已重置" });
   });
 });
