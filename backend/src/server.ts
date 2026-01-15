@@ -156,7 +156,7 @@ app.post('/api/admin/reset', (req, res) => {
 });
 
 // 6. 管理端 - 节目管理 (增加/删除)
-app.post('/api/admin/programs', (req, res) => {
+app.post('/api/admin/programs', authenticateToken, (req, res) => {
     const { title, performer, color } = req.body;
     if (!title || !performer) return res.status(400).json({code: 400, message: '标题和表演者不能为空'});
     

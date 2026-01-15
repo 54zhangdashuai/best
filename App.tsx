@@ -63,7 +63,16 @@ const VotingPage: React.FC = () => {
   };
 
   if (loading) return <div className="p-8 text-center text-slate-500">加载中...</div>;
-  if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
+  if (error) return (
+      <div className="p-8 text-center text-red-500 flex flex-col gap-2">
+          <p className="font-bold">无法加载节目数据</p>
+          <p className="text-sm">错误详情: {error}</p>
+          <p className="text-xs text-slate-400">请检查网络连接或联系管理员</p>
+          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-blue-100 text-blue-600 rounded">
+              重试
+          </button>
+      </div>
+  );
 
   return <VotingView candidates={candidates} voteLimit={voteLimit} onVote={handleVote} />;
 };
@@ -127,8 +136,14 @@ const AdminPage: React.FC = () => {
       await api.login(password);
       setIsAuthenticated(true);
       fetchData();
-    } catch (err) {
-      alert('密码错误');
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      // Distinguish between network errors and actual auth failure
+      if (err.message === 'Login failed' || err.message === '密码错误') {
+          alert('密码错误，请重试');
+      } else {
+          alert(`连接服务器失败: ${err.message || '未知错误'}`);
+      }
     }
   };
 

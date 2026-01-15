@@ -1,82 +1,74 @@
-# 服务器部署指南 (Ubuntu 22.04 LTS)
+# Server Deployment Guide (服务器部署指南)
 
-## 1. 准备工作
+**System Name**: 是为科技年会最佳节目实时投票系统
+**Server IP**: 122.51.60.20
+**OS**: Ubuntu 22.04 LTS
 
-### 1.1 获取代码
-使用 Git 将代码拉取到服务器（假设您已将代码提交到 Git 仓库）：
+## 1. Prerequisites (准备工作)
 
+Ensure Docker and Git are installed on the server.
 ```bash
-# 登录服务器
-ssh ubuntu@122.51.60.20
+sudo apt update
+sudo apt install git docker.io docker-compose -y
+```
 
-# 首次拉取 (如果使用 HTTPS)
-git clone <您的Git仓库地址> best-vote
-cd best-vote
+## 2. Deployment Steps (部署步骤)
 
-# 或者如果已有代码，更新代码
-cd best-vote
+### Step 1: Clone/Pull Repository
+```bash
+# First time setup
+git clone <your-repo-url> best
+cd best
+
+# Or if already cloned (Updating)
+cd best
 git pull
 ```
 
-### 1.2 确保 Docker 环境
-服务器已安装 Docker (如未安装请先安装):
+### Step 2: Configure Environment
+Ensure `docker-compose.yml` and `nginx.conf` are present in the root directory.
+
+### Step 3: Start Services
 ```bash
-docker --version
-docker-compose --version
-```
-
-## 2. 部署与启动
-
-我们使用 Docker Compose 一键启动所有服务 (Nginx + 前端静态资源 + Node.js 后端)。
-
-```bash
-# 在项目根目录下执行
-# -d 表示后台运行
-# --build 表示重新构建镜像 (确保代码更新生效)
+# Build and start in detached mode
 sudo docker-compose up -d --build
 ```
 
-### 检查运行状态
+### Step 4: Verify Deployment
+Check if containers are running:
 ```bash
-sudo docker-compose ps
+sudo docker ps
 ```
-如果一切正常，您应该看到 `frontend` 和 `backend` 容器都处于 `Up` 状态。
+You should see `nebulavote-frontend` (Port 80) and `nebulavote-backend` (Port 3000).
 
-## 3. 访问地址
+## 3. Access Addresses (访问地址)
 
-系统部署在 IP: `122.51.60.20`，默认开放 `80` 端口 (HTTP)。
+| Role | URL | Note |
+| :--- | :--- | :--- |
+| **Mobile Voting (移动端投票)** | `http://122.51.60.20/vote` | 发送给员工的链接 |
+| **Big Screen (大屏展示)** | `http://122.51.60.20/leaderboard` | 投屏使用 |
+| **Admin Panel (管理后台)** | `http://122.51.60.20/admin` | 密码: `54zds` |
 
-- **用户投票 (手机端)**:  
-  [http://122.51.60.20/vote](http://122.51.60.20/vote)  
-  *(请将此链接生成二维码发给同事)*
+## 4. Troubleshooting (故障排查)
 
-- **大屏展示 (投屏电脑)**:  
-  [http://122.51.60.20/leaderboard](http://122.51.60.20/leaderboard)
+If you encounter "Password Error" or "Failed to fetch programs":
 
-- **后台管理 (管理员)**:  
-  [http://122.51.60.20/admin](http://122.51.60.20/admin)  
-  *密码: 54zds*
+1.  **Check Backend Logs**:
+    ```bash
+    sudo docker logs nebulavote-backend
+    ```
+    Look for database errors or crash logs.
 
-## 4. 常见问题与维护
+2.  **Check Permissions**:
+    If you see SQLite permission errors, fix the data directory permissions:
+    ```bash
+    # On the host machine
+    chmod -R 777 backend/data
+    sudo docker-compose restart backend
+    ```
 
-### 4.1 无法访问?
-请检查腾讯云控制台的 **安全组 (Security Group)** 设置，确保 **入站规则** 中已开放 `TCP:80` 端口。
-
-### 4.2 投票限制与重置
-- **一人一票**: 系统通过浏览器缓存 (LocalStorage) + IP 双重校验。
-- **重置投票**: 在管理后台点击“重置数据”后，所有历史票数清零。**注意**: 重置后，之前投过票的用户**可以再次投票** (因为数据库记录已清除)。
-
-### 4.3 查看日志
-如果遇到报错，可以查看后台日志：
-```bash
-# 查看后端日志
-sudo docker-compose logs -f backend
-
-# 查看前端/Nginx日志
-sudo docker-compose logs -f frontend
-```
-
-### 4.4 停止服务
-```bash
-sudo docker-compose down
-```
+3.  **Check Nginx**:
+    Verify Nginx is proxying `/api` correctly:
+    ```bash
+    sudo docker logs nebulavote-frontend
+    ```
