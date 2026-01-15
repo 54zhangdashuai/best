@@ -146,8 +146,7 @@ app.post('/api/admin/settings', authenticateToken, (req, res) => {
 });
 
 // 5. 管理端 - 重置数据
-app.post('/api/admin/reset', (req, res) => {
-  // TODO: Add Token Verification Middleware
+app.post('/api/admin/reset', authenticateToken, (req, res) => {
   db.serialize(() => {
     db.run("DELETE FROM vote_records");
     db.run("UPDATE programs SET vote_count = 0");

@@ -1,16 +1,28 @@
-FROM node:18-alpine
+FROM node:18-bullseye-slim AS build
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+FROM node:18-bullseye-slim
 
 WORKDIR /app
 
 COPY package*.json ./
+RUN npm install --omit=dev
 
-RUN npm install
+COPY --from=build /app/dist ./dist
 
-COPY . .
-
-# Create data directory
 RUN mkdir -p data
 
 EXPOSE 3000
 
-CMD ["npx", "ts-node", "src/server.ts"]
+CMD ["node", "dist/server.js"]
