@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    container_name: nebulavote-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/data:/app/data
+    restart: always
+
+  frontend:
+    build: .
+    container_name: nebulavote-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
