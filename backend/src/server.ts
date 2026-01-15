@@ -85,10 +85,22 @@ app.post('/api/vote', (req, res) => {
   }
 
   // 1. 获取当前投票规则
-  db.get("SELECT value FROM settings WHERE key = 'vote_count_limit'", (err, row: any) => {
+  db.all("SELECT key, value FROM settings", (err, rows: any[]) => {
     if (err) return res.status(500).json({ code: 500, message: err.message });
     
-    const limit = row ? parseInt(row.value) : 1;
+    let limit = 1;
+    let enabled = true;
+
+    if (rows) {
+        rows.forEach(row => {
+            if (row.key === 'vote_count_limit') limit = parseInt(row.value);
+            if (row.key === 'voting_enabled') enabled = row.value === 'true';
+        });
+    }
+
+    if (!enabled) {
+        return res.status(403).json({ code: 1003, message: "投票通道已关闭" });
+    }
     
     if (programIds.length !== limit) {
       return res.status(400).json({ code: 1002, message: `请选择 ${limit} 个节目进行投票` });
