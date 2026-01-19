@@ -35,6 +35,11 @@ erDiagram
 | value | TEXT | NOT NULL | 配置项值 |
 | updated_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
+**新增配置项约定**：
+*   `countdown_duration_seconds`：倒计时总时长（秒）
+*   `countdown_end_at`：倒计时结束时间（ISO 字符串或 UNIX 时间戳）
+*   `countdown_status`：倒计时状态（`idle` / `running` / `finished`）
+
 ### 2.1 节目表 (programs)
 用于存储参与投票的节目信息。
 
@@ -64,6 +69,8 @@ erDiagram
 
 ```sql
 INSERT INTO settings (key, value) VALUES ('vote_count_limit', '1');
+INSERT INTO settings (key, value) VALUES ('countdown_duration_seconds', '120');
+INSERT INTO settings (key, value) VALUES ('countdown_status', 'idle');
 
 INSERT INTO programs (title, vote_count) VALUES 
 ('开场舞：龙飞凤舞', 0),

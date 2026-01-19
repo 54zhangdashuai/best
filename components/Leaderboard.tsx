@@ -5,9 +5,10 @@ import { Candidate } from '../types';
 
 interface LeaderboardProps {
   candidates: Candidate[];
+  showWinnerEffects?: boolean;
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ candidates }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ candidates, showWinnerEffects }) => {
   // Find the highest vote count to calculate relative progress bar width
   const maxVotes = Math.max(...candidates.map(c => c.votes), 1);
 
@@ -20,6 +21,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ candidates }) => {
               key={candidate.id} 
               candidate={candidate} 
               maxVotes={maxVotes}
+              showWinnerEffects={showWinnerEffects}
             />
           ))}
         </AnimatePresence>

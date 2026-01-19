@@ -44,6 +44,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
       // 插入默认配置 (如果不存在)
       db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('vote_count_limit', '1')`);
       db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('voting_enabled', 'true')`);
+      db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('countdown_duration_seconds', '120')`); // 默认倒计时 120 秒
+      db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('countdown_end_at', '0')`); // 倒计时结束时间戳，0表示未开始
+
 
       // 插入示例节目数据 (如果表为空)
       db.get("SELECT count(*) as count FROM programs", (err, row: any) => {

@@ -6,9 +6,10 @@ import { Candidate } from '../types';
 interface LeaderboardViewProps {
   candidates: Candidate[];
   totalVotes: number;
+  showWinnerEffects?: boolean;
 }
 
-const LeaderboardView: React.FC<LeaderboardViewProps> = ({ candidates, totalVotes }) => {
+const LeaderboardView: React.FC<LeaderboardViewProps> = ({ candidates, totalVotes, showWinnerEffects }) => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100">
       {/* Decorative background gradients */}
@@ -43,7 +44,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ candidates, totalVote
         </div>
 
         {/* Main List */}
-        <Leaderboard candidates={candidates} />
+        <Leaderboard candidates={candidates} showWinnerEffects={showWinnerEffects} />
 
         {/* Footer */}
         <div className="mt-12 text-center opacity-60">

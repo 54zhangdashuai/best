@@ -1,4 +1,4 @@
-import { Candidate } from './types';
+import { Candidate, Config } from './types';
 
 // Use relative path for production (handled by Nginx proxy)
 // For local dev with Vite proxy, this also works if configured.
@@ -63,7 +63,7 @@ const fetchJson = async (input: RequestInfo | URL, init?: RequestInit) => {
 
 export const api = {
   // Get Programs (Candidates) and Config
-  getPrograms: async (): Promise<{ candidates: Candidate[], config: { vote_count_limit: number, voting_enabled: boolean } }> => {
+  getPrograms: async (): Promise<{ candidates: Candidate[], config: Config }> => {
     const json = await fetchJson(`${API_BASE_URL}/programs`);
     
     // Map backend data to frontend Candidate interface
@@ -125,7 +125,7 @@ export const api = {
   },
 
   // Admin: Update Settings
-  updateSettings: async (vote_count_limit: number, voting_enabled?: boolean) => {
+  updateSettings: async (vote_count_limit: number, voting_enabled?: boolean, countdown_duration_seconds?: number) => {
     const token = safeLocalStorageGet('admin_token');
     const json = await fetchJson(`${API_BASE_URL}/admin/settings`, {
       method: 'POST',
@@ -133,7 +133,19 @@ export const api = {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ vote_count_limit, voting_enabled })
+      body: JSON.stringify({ vote_count_limit, voting_enabled, countdown_duration_seconds })
+    });
+    return json;
+  },
+
+  // Admin: Start Vote (Countdown)
+  startVote: async () => {
+    const token = safeLocalStorageGet('admin_token');
+    const json = await fetchJson(`${API_BASE_URL}/admin/start_vote`, {
+      method: 'POST',
+      headers: { 
+          'Authorization': `Bearer ${token}`
+      }
     });
     return json;
   },

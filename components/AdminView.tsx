@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RefreshCw, Settings, Trash2, Plus, Pencil, X, RotateCcw, Save, AlertCircle } from 'lucide-react';
 import { Candidate } from '../types';
 
@@ -6,8 +6,11 @@ interface AdminViewProps {
   candidates: Candidate[];
   voteLimit: number;
   votingEnabled: boolean;
+  countdownDuration: number;
   onUpdateVoteLimit: (limit: number) => Promise<void>;
   onToggleVoting: (enabled: boolean) => Promise<void>;
+  onUpdateCountdown: (duration: number) => Promise<void>;
+  onStartVote: () => Promise<void>;
   onReset: () => void;
   onUpdateCandidate: (id: string, updates: Partial<Candidate>) => void;
   onAddCandidate: (data: Omit<Candidate, 'id' | 'votes' | 'currentRank' | 'previousRank'>) => void;
@@ -18,8 +21,11 @@ const AdminView: React.FC<AdminViewProps> = ({
   candidates, 
   voteLimit,
   votingEnabled,
+  countdownDuration,
   onUpdateVoteLimit,
   onToggleVoting,
+  onUpdateCountdown,
+  onStartVote,
   onReset,
   onUpdateCandidate,
   onAddCandidate,
@@ -31,7 +37,16 @@ const AdminView: React.FC<AdminViewProps> = ({
 
   // Settings State
   const [newLimit, setNewLimit] = useState(voteLimit);
+  const [newDuration, setNewDuration] = useState(countdownDuration);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  useEffect(() => {
+    setNewLimit(voteLimit);
+  }, [voteLimit]);
+
+  useEffect(() => {
+    setNewDuration(countdownDuration || 120);
+  }, [countdownDuration]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -82,6 +97,28 @@ const AdminView: React.FC<AdminViewProps> = ({
       } finally {
           setIsSavingSettings(false);
       }
+  };
+
+  const handleSaveCountdown = async () => {
+    setIsSavingSettings(true);
+    try {
+        await onUpdateCountdown(newDuration);
+        alert('倒计时时长已保存');
+    } catch (error) {
+        alert('保存失败');
+    } finally {
+        setIsSavingSettings(false);
+    }
+  };
+
+  const handleStartCountdownVote = async () => {
+    setIsSavingSettings(true);
+    try {
+      await onUpdateCountdown(newDuration);
+      await onStartVote();
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   return (
@@ -148,6 +185,40 @@ const AdminView: React.FC<AdminViewProps> = ({
                             <p className="text-xs text-slate-500 mt-1">
                                 {votingEnabled ? '当前允许用户投票' : '当前已暂停投票，用户无法提交'}
                             </p>
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                倒计时时长 (秒)
+                            </label>
+                            <div className="flex items-center gap-2 mb-2">
+                                <input 
+                                    type="number" 
+                                    min="10"
+                                    value={newDuration}
+                                    onChange={(e) => setNewDuration(parseInt(e.target.value) || 120)}
+                                    className="block w-full rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                />
+                                <button
+                                    onClick={handleSaveCountdown}
+                                    disabled={isSavingSettings}
+                                    className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                                    title="保存时长设置"
+                                >
+                                    <Save size={20} />
+                                </button>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    if(confirm(`确定要开始 ${newDuration} 秒的倒计时投票吗？这将重置当前倒计时。`)) {
+                                        handleStartCountdownVote();
+                                    }
+                                }}
+                                disabled={isSavingSettings}
+                                className="w-full py-2 px-4 rounded-lg font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw size={16} /> 启动倒计时投票
+                            </button>
                         </div>
 
                         <div className="border-t border-slate-100 pt-4">

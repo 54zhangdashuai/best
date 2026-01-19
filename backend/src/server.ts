@@ -52,14 +52,25 @@ app.get('/api/programs', (req, res) => {
       
       const config: any = {
           vote_count_limit: 1,
-          voting_enabled: true
+          voting_enabled: true,
+          countdown_duration_seconds: 120,
+          countdown_end_at: 0,
+          remaining_seconds: 0
       };
 
       if (rows) {
           rows.forEach(row => {
               if (row.key === 'vote_count_limit') config.vote_count_limit = parseInt(row.value);
               if (row.key === 'voting_enabled') config.voting_enabled = row.value === 'true';
+              if (row.key === 'countdown_duration_seconds') config.countdown_duration_seconds = parseInt(row.value);
+              if (row.key === 'countdown_end_at') config.countdown_end_at = parseInt(row.value);
           });
+      }
+
+      // Calculate remaining
+      if (config.countdown_end_at > 0) {
+          const now = Date.now();
+          config.remaining_seconds = Math.max(0, Math.floor((config.countdown_end_at - now) / 1000));
       }
       
       res.json({
@@ -90,12 +101,21 @@ app.post('/api/vote', (req, res) => {
     
     let limit = 1;
     let enabled = true;
+    let countdownEndAt = 0;
 
     if (rows) {
         rows.forEach(row => {
             if (row.key === 'vote_count_limit') limit = parseInt(row.value);
             if (row.key === 'voting_enabled') enabled = row.value === 'true';
+            if (row.key === 'countdown_end_at') countdownEndAt = parseInt(row.value);
         });
+    }
+
+    // Check Countdown Expiration
+    if (countdownEndAt > 0 && Date.now() > countdownEndAt) {
+         enabled = false;
+         // Optionally update DB to reflect closed state (optimization, not strictly required as logic holds)
+         // But for now, just blocking the request is enough.
     }
 
     if (!enabled) {
@@ -153,7 +173,7 @@ app.post('/api/login', (req, res) => {
 
 // 4. 管理端 - 修改规则
 app.post('/api/admin/settings', authenticateToken, (req, res) => {
-  const { vote_count_limit, voting_enabled } = req.body;
+  const { vote_count_limit, voting_enabled, countdown_duration_seconds } = req.body;
   
   const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
 
@@ -166,6 +186,9 @@ app.post('/api/admin/settings', authenticateToken, (req, res) => {
         if (typeof voting_enabled !== 'undefined') {
              stmt.run('voting_enabled', voting_enabled.toString());
         }
+        if (countdown_duration_seconds && countdown_duration_seconds > 0) {
+             stmt.run('countdown_duration_seconds', countdown_duration_seconds.toString());
+        }
         db.run("COMMIT", () => {
             stmt.finalize();
             res.json({ code: 0, message: "规则已更新" });
@@ -177,13 +200,42 @@ app.post('/api/admin/settings', authenticateToken, (req, res) => {
   });
 });
 
+// 7. 管理端 - 开始投票 (倒计时)
+app.post('/api/admin/start_vote', authenticateToken, (req, res) => {
+    db.get("SELECT value FROM settings WHERE key = 'countdown_duration_seconds'", (err, row: any) => {
+        if (err) return res.status(500).json({ code: 500, message: err.message });
+        
+        const duration = row ? parseInt(row.value) : 120; // Default 120s
+        const endAt = Date.now() + duration * 1000;
+        
+        const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+        
+        db.serialize(() => {
+            db.run("BEGIN TRANSACTION");
+            try {
+                stmt.run('countdown_end_at', endAt.toString());
+                stmt.run('voting_enabled', 'true'); // Auto enable voting
+                
+                db.run("COMMIT", () => {
+                    stmt.finalize();
+                    res.json({ code: 0, message: "投票已开始，倒计时启动" });
+                });
+            } catch (error) {
+                db.run("ROLLBACK");
+                res.status(500).json({ code: 500, message: "启动失败" });
+            }
+        });
+    });
+});
+
 // 5. 管理端 - 重置数据
 app.post('/api/admin/reset', authenticateToken, (req, res) => {
   db.serialize(() => {
     db.run("DELETE FROM vote_records");
     db.run("UPDATE programs SET vote_count = 0");
-    // 重置后开启投票
+    // 重置后开启投票，并重置倒计时
     db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('voting_enabled', 'true')");
+    db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('countdown_end_at', '0')"); // Reset countdown
     res.json({ code: 0, message: "系统数据已重置" });
   });
 });

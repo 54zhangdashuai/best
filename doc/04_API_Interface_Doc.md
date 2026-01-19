@@ -19,7 +19,13 @@
           { "id": 2, "title": "歌曲独唱", "vote_count": 85 }
         ],
         "config": {
-          "vote_count_limit": 3 // 必须投几票
+          "vote_count_limit": 3,
+          "voting_enabled": true,
+          "countdown": {
+            "duration_seconds": 120,
+            "end_at": "2026-01-19T20:00:00.000Z",
+            "status": "running"
+          }
         }
       }
     }
@@ -101,7 +107,27 @@
     { "code": 0, "message": "规则已更新" }
     ```
 
-### 2.4 重置系统
+### 2.4 倒计时控制
+用于设置倒计时总时长并开始/停止投票倒计时。
+
+*   **URL**: `POST /admin/countdown`
+*   **Body**:
+    ```json
+    { 
+      "duration_seconds": 120,
+      "action": "start"
+    }
+    ```
+*   **Action 说明**:
+    *   `start`：开始倒计时（若已开始则重置并重新开始）
+    *   `stop`：停止倒计时并保持当前状态
+    *   `reset`：重置为初始状态 (00:00, idle)
+*   **Response**:
+    ```json
+    { "code": 0, "message": "倒计时已开始" }
+    ```
+
+### 2.5 重置系统
 清空所有投票数据，将所有节目的 `vote_count` 重置为 0，并自动开启投票通道。
 
 *   **URL**: `POST /admin/reset`

@@ -1,35 +1,218 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { Candidate } from './types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Candidate, Config } from './types';
 import LeaderboardView from './components/LeaderboardView';
 import VotingView from './components/VotingView';
 import AdminView from './components/AdminView';
 import { api } from './client';
 
-// --- Data Provider / Wrapper ---
-// This component manages the polling and state for the whole app context if needed,
-// or we can let individual pages handle it. 
-// Given the requirements:
-// - Leaderboard: Auto-refresh 2s
-// - Voting: Fetch once (or refresh occasionally), submit
-// - Admin: Fetch on mount, update on actions
-//
-// It seems better to let pages manage their data or lift it up here.
-// Lifting up allows sharing data but Leaderboard needs high freq, others don't.
-// Let's implement a custom hook or just manage inside components for simplicity in this structure.
-// But wait, the user wants "3 separate parts".
-//
-// However, I'll put the Router here.
+// --- Components ---
+
+const CountdownTimer: React.FC<{ remaining: number; fadeOut?: boolean }> = ({ remaining, fadeOut }) => {
+  // if (remaining <= 0) return null; // Always show if parent renders it
+  const safeRemaining = Math.max(0, remaining);
+  const mins = Math.floor(safeRemaining / 60);
+  const secs = safeRemaining % 60;
+  return (
+    <div
+      className="fixed top-4 right-4 z-50 bg-black/80 text-white px-4 py-2 rounded-lg font-mono text-xl shadow-lg border border-white/20"
+      style={{
+        opacity: fadeOut ? 0 : 1,
+        transition: 'opacity 6s ease'
+      }}
+    >
+      {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+    </div>
+  );
+};
+
+const BreathingBorder: React.FC<{ remaining: number; total: number }> = ({ remaining, total }) => {
+  if (total <= 0) return null;
+
+  const lastColorRef = useRef<string>('#22c55e');
+  const [fadeOut, setFadeOut] = useState(false);
+
+  const percentage = total > 0 ? remaining / total : 0;
+  
+  // Color transition logic (using CSS transition for smoothness instead of just state jump)
+  let color = '#22c55e'; // Green
+  if (percentage < 0.25) color = '#ef4444'; // Red
+  else if (percentage < 0.5) color = '#f97316'; // Orange
+  else if (percentage < 0.75) color = '#eab308'; // Yellow
+  else if (percentage < 0.9) color = '#06b6d4'; // Cyan
+
+  useEffect(() => {
+    if (remaining > 0) {
+      lastColorRef.current = color;
+      setFadeOut(false);
+    } else {
+      setFadeOut(true);
+    }
+  }, [remaining, color]);
+
+  // Speed transition logic: 2s -> 0.5s
+  const speed = 0.5 + (1.5 * percentage);
+
+  if (remaining <= 0) {
+    return (
+      <div
+        className="fixed inset-0 pointer-events-none z-[100]"
+        style={{
+          boxShadow: `inset 0 0 100px 40px ${lastColorRef.current}`,
+          opacity: fadeOut ? 0 : 0.9,
+          transition: 'opacity 6s ease'
+        }}
+      />
+    );
+  }
+
+  return (
+    <div 
+      className="fixed inset-0 pointer-events-none z-[100]"
+      style={{
+        // Remove hard border, use large inset shadow
+        boxShadow: `inset 0 0 75px 25px ${color}`,
+        // Add transition to color changes to make them "natural"
+        transition: 'box-shadow 1s linear', 
+        animation: `breathing ${speed}s ease-in-out infinite alternate`,
+      } as React.CSSProperties}
+    />
+  );
+};
+
+// --- Global Layout with Countdown ---
+const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [config, setConfig] = useState<Config | null>(null);
+  const [dismissedCountdownEndAt, setDismissedCountdownEndAt] = useState<number | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishingEndAtRef = useRef<number | null>(null);
+  const location = useLocation();
+  const isLeaderboard = location.pathname === '/leaderboard' || location.pathname === '/screen';
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const { config: newConfig } = await api.getPrograms();
+        setConfig(newConfig);
+      } catch (e) {
+        console.error("Failed to fetch config", e);
+      }
+    };
+
+    fetchConfig();
+    const interval = setInterval(fetchConfig, 1000); // 1s polling for countdown
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!config) return;
+
+    if (config.countdown_end_at <= 0) {
+      if (finishTimeoutRef.current) {
+        clearTimeout(finishTimeoutRef.current);
+        finishTimeoutRef.current = null;
+      }
+      finishingEndAtRef.current = null;
+      setIsFinishing(false);
+      setDismissedCountdownEndAt(null);
+      return;
+    }
+
+    if (config.remaining_seconds > 0) {
+      if (finishTimeoutRef.current) {
+        clearTimeout(finishTimeoutRef.current);
+        finishTimeoutRef.current = null;
+      }
+      finishingEndAtRef.current = null;
+      setIsFinishing(false);
+      if (dismissedCountdownEndAt === config.countdown_end_at) {
+        setDismissedCountdownEndAt(null);
+      }
+      return;
+    }
+
+    if (finishingEndAtRef.current === config.countdown_end_at) return;
+
+    if (finishTimeoutRef.current) {
+      clearTimeout(finishTimeoutRef.current);
+      finishTimeoutRef.current = null;
+    }
+
+    finishingEndAtRef.current = config.countdown_end_at;
+    setIsFinishing(true);
+    const endedAt = config.countdown_end_at;
+    finishTimeoutRef.current = setTimeout(() => {
+      setDismissedCountdownEndAt(endedAt);
+      setIsFinishing(false);
+      finishTimeoutRef.current = null;
+    }, 6500);
+  }, [config, dismissedCountdownEndAt]);
+
+  const shouldShowCountdownUi =
+    !!config && config.countdown_end_at > 0 && config.countdown_end_at !== dismissedCountdownEndAt;
+
+  return (
+    <>
+      <style>{`
+        @keyframes breathing {
+          from { opacity: 0.5; transform: scale(1); }
+          to { opacity: 0.9; transform: scale(1); }
+        }
+        @keyframes goldShimmer {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
+        }
+        .gold-shimmer-border {
+          background: linear-gradient(90deg, rgba(250, 204, 21, 0.25), rgba(245, 158, 11, 0.9), rgba(250, 204, 21, 0.25));
+          background-size: 200% 100%;
+          animation: goldShimmer 2.8s linear infinite;
+        }
+        @keyframes confettiFly {
+          0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0deg); }
+          15% { opacity: 0.9; }
+          100% { opacity: 0; transform: translate3d(24px, 18px, 0) rotate(140deg); }
+        }
+        .first-confetti {
+          position: absolute;
+          width: 18px;
+          height: 3px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, rgba(253, 230, 138, 1), rgba(245, 158, 11, 1));
+          opacity: 0;
+          animation: confettiFly 1.9s ease-in-out infinite;
+          filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
+        }
+      `}</style>
+      
+      {shouldShowCountdownUi && (
+        <>
+          {isLeaderboard && (
+            <BreathingBorder 
+              remaining={config.remaining_seconds} 
+              total={config.countdown_duration_seconds || 120} 
+            />
+          )}
+          <CountdownTimer remaining={config.remaining_seconds} fadeOut={isFinishing} />
+        </>
+      )}
+      
+      {children}
+    </>
+  );
+};
 
 const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/vote" replace />} />
-        <Route path="/vote" element={<VotingPage />} />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Navigate to="/vote" replace />} />
+          <Route path="/vote" element={<VotingPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+        </Routes>
+      </Layout>
     </BrowserRouter>
   );
 };
@@ -83,10 +266,11 @@ const LeaderboardPage: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [totalVotes, setTotalVotes] = useState(0);
   const [prevRanks, setPrevRanks] = useState<Map<string, number>>(new Map());
+  const [showWinnerEffects, setShowWinnerEffects] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const { candidates: rawCandidates } = await api.getPrograms();
+      const { candidates: rawCandidates, config } = await api.getPrograms();
       
       // Calculate ranks and sort
       const sorted = [...rawCandidates].sort((a, b) => b.votes - a.votes);
@@ -107,6 +291,7 @@ const LeaderboardPage: React.FC = () => {
       setPrevRanks(newPrevRanks);
       
       setCandidates(rankedCandidates);
+      setShowWinnerEffects(config.countdown_end_at > 0 && config.remaining_seconds <= 0);
     } catch (err) {
       console.error("Failed to fetch leaderboard data", err);
     }
@@ -122,7 +307,7 @@ const LeaderboardPage: React.FC = () => {
   // Actually, we can use a functional state update or ref for prevRanks to avoid re-creating the interval.
   // Ref is better for "previous" tracking without re-triggering effect.
 
-  return <LeaderboardView candidates={candidates} totalVotes={totalVotes} />;
+  return <LeaderboardView candidates={candidates} totalVotes={totalVotes} showWinnerEffects={showWinnerEffects} />;
 };
 
 const AdminPage: React.FC = () => {
@@ -131,6 +316,7 @@ const AdminPage: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [voteLimit, setVoteLimit] = useState(1);
   const [votingEnabled, setVotingEnabled] = useState(true);
+  const [countdownDuration, setCountdownDuration] = useState(120);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -159,19 +345,30 @@ const AdminPage: React.FC = () => {
       setCandidates(ranked);
       setVoteLimit(config.vote_count_limit);
       setVotingEnabled(config.voting_enabled);
+      setCountdownDuration(config.countdown_duration_seconds);
     } catch (err) {
       console.error(err);
     }
   };
 
   const handleUpdateVoteLimit = async (limit: number) => {
-      await api.updateSettings(limit, votingEnabled);
+      await api.updateSettings(limit, votingEnabled, countdownDuration);
       setVoteLimit(limit);
   };
 
   const handleToggleVoting = async (enabled: boolean) => {
-      await api.updateSettings(voteLimit, enabled);
+      await api.updateSettings(voteLimit, enabled, countdownDuration);
       setVotingEnabled(enabled);
+  };
+  
+  const handleUpdateCountdown = async (duration: number) => {
+      await api.updateSettings(voteLimit, votingEnabled, duration);
+      setCountdownDuration(duration);
+  };
+  
+  const handleStartVote = async () => {
+      await api.startVote();
+      fetchData();
   };
 
   const handleReset = async () => {
@@ -214,8 +411,11 @@ const AdminPage: React.FC = () => {
       candidates={candidates}
       voteLimit={voteLimit}
       votingEnabled={votingEnabled}
+      countdownDuration={countdownDuration}
       onUpdateVoteLimit={handleUpdateVoteLimit}
       onToggleVoting={handleToggleVoting}
+      onUpdateCountdown={handleUpdateCountdown}
+      onStartVote={handleStartVote}
       onReset={handleReset}
       onUpdateCandidate={() => {}} // Not implemented in backend yet
       onAddCandidate={handleAddCandidate}

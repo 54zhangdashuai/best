@@ -6,10 +6,13 @@ import { Candidate } from '../types';
 interface LeaderboardItemProps {
   candidate: Candidate;
   maxVotes: number;
+  showWinnerEffects?: boolean;
 }
 
-const LeaderboardItem: React.FC<LeaderboardItemProps> = ({ candidate, maxVotes }) => {
+const LeaderboardItem: React.FC<LeaderboardItemProps> = ({ candidate, maxVotes, showWinnerEffects }) => {
   const { name, handle, votes, color, previousRank, currentRank } = candidate;
+  const isFirst = currentRank === 1;
+  const showFirstEffects = !!showWinnerEffects && isFirst;
 
   // Calculate rank change
   const rankChange = previousRank - currentRank; // Positive means moved up (e.g. 5 -> 3)
@@ -32,7 +35,26 @@ const LeaderboardItem: React.FC<LeaderboardItemProps> = ({ candidate, maxVotes }
       className="relative group"
     >
       {/* Background Card - White, clean shadow, border */}
-      <div className="relative flex items-center p-4 mb-3 overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-md hover:border-blue-200">
+      <div
+        className={[
+          'relative mb-3 rounded-2xl',
+          showFirstEffects ? 'p-[1px] gold-shimmer-border' : 'p-0'
+        ].join(' ')}
+      >
+        <div
+          className={[
+            'relative flex items-center p-4 overflow-hidden rounded-2xl bg-white transition-all duration-300',
+            showFirstEffects ? 'border border-transparent shadow-md' : 'border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200'
+          ].join(' ')}
+        >
+          {showFirstEffects && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+              <span className="first-confetti" style={{ left: '10%', top: '-8px', animationDelay: '0s' }} />
+              <span className="first-confetti" style={{ left: '18%', top: '-10px', animationDelay: '0.35s', transform: 'rotate(18deg)' }} />
+              <span className="first-confetti" style={{ right: '16%', top: '-10px', animationDelay: '0.6s', transform: 'rotate(-12deg)' }} />
+              <span className="first-confetti" style={{ right: '8%', top: '-8px', animationDelay: '0.95s', transform: 'rotate(-22deg)' }} />
+            </div>
+          )}
         
         {/* Progress Bar Background (Subtle) */}
         <div 
@@ -103,6 +125,7 @@ const LeaderboardItem: React.FC<LeaderboardItemProps> = ({ candidate, maxVotes }
               {votes.toLocaleString()}
             </motion.span>
             <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">票数</span>
+        </div>
         </div>
       </div>
     </motion.li>

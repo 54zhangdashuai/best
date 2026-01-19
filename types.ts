@@ -8,6 +8,14 @@ export interface Candidate {
   currentRank: number;
 }
 
+export interface Config {
+  vote_count_limit: number;
+  voting_enabled: boolean;
+  countdown_duration_seconds: number;
+  countdown_end_at: number; // Timestamp (ms)
+  remaining_seconds: number;
+}
+
 export interface SimulationConfig {
   isRunning: boolean;
   updateInterval: number; // ms
