@@ -119,3 +119,35 @@ Login to `http://<ip>/admin` to manage the system.
 ### 2. Voting Page (投票页)
 - Users open the link, select the required number of programs, and click submit.
 - If voting is stopped by admin, the interface becomes read-only with a visual warning.
+
+---
+
+## Part 4: Performance Tuning (性能与并发调优)
+
+本节面向“1 台大屏 + 300 人同时访问投票页并集中投票”的生产场景，给出最小改动的稳定性方案：**用 Nginx 微缓存吸收读压 + 用限流/超时保护写入**。
+
+### 1. Nginx 微缓存（推荐上线默认开启）
+目标：将 300 人对 `GET /api/programs` 的高频轮询合并为少量回源请求，避免后端出现 5xx。
+
+建议策略：
+*   **仅缓存**：`GET /api/programs`
+*   **缓存 TTL**：0.5s～1s
+*   **失败兜底**：上游短暂失败时返回旧缓存（stale），优先保证可用性与大屏连续刷新
+
+### 2. 写入保护（投票爆发窗口）
+目标：投票爆发时“允许排队但不失败”，并避免异常流量将写接口打爆。
+
+建议策略：
+*   **限流**：对 `POST /api/vote` 设置速率限制 + 突发放行（注意公司内网 NAT 共用 IP 的误伤风险，burst 值要留足）。
+*   **超时**：设置合理的上游超时（不要过短），避免投票在数据库排队时被网关提前 504。
+*   **错误码**：限流返回 429；业务拒绝返回 400/403；后端错误返回 500（并在日志中区分上游失败与应用错误）。
+
+### 3. 观测与定位（上线必备）
+建议在 Nginx access log 中记录：
+*   `$status`、`$upstream_status`
+*   `$request_time`、`$upstream_response_time`
+*   `$http_user_agent`、`$remote_addr`
+
+建议在后端日志中区分记录：
+*   `GET /api/programs` 的响应耗时与状态码
+*   `POST /api/vote` 的响应耗时与失败原因（特别是 SQLite busy/超时类错误）

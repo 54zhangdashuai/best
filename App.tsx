@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Candidate, Config } from './types';
 import LeaderboardView from './components/LeaderboardView';
@@ -91,18 +91,29 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isLeaderboard = location.pathname === '/leaderboard' || location.pathname === '/screen';
 
   useEffect(() => {
-    const fetchConfig = async () => {
+    let cancelled = false;
+    let failures = 0;
+    let delayMs = 1000;
+
+    const tick = async () => {
+      if (cancelled) return;
       try {
-        const { config: newConfig } = await api.getPrograms();
+        const { config: newConfig } = await api.getConfig();
         setConfig(newConfig);
+        failures = 0;
+        delayMs = 1000;
       } catch (e) {
-        console.error("Failed to fetch config", e);
+        failures += 1;
+        delayMs = Math.min(8000, 1000 * Math.pow(2, Math.min(3, failures)));
+      } finally {
+        if (!cancelled) setTimeout(tick, delayMs);
       }
     };
 
-    fetchConfig();
-    const interval = setInterval(fetchConfig, 1000); // 1s polling for countdown
-    return () => clearInterval(interval);
+    tick();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -265,47 +276,47 @@ const VotingPage: React.FC = () => {
 const LeaderboardPage: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [totalVotes, setTotalVotes] = useState(0);
-  const [prevRanks, setPrevRanks] = useState<Map<string, number>>(new Map());
+  const prevRanksRef = useRef<Map<string, number>>(new Map());
   const [showWinnerEffects, setShowWinnerEffects] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const { candidates: rawCandidates, config } = await api.getPrograms();
-      
-      // Calculate ranks and sort
-      const sorted = [...rawCandidates].sort((a, b) => b.votes - a.votes);
-      
-      // Calculate Total
-      const total = sorted.reduce((acc, c) => acc + c.votes, 0);
-      setTotalVotes(total);
-
-      // Add Rank Info
-      const rankedCandidates = sorted.map((c, index) => {
-        const currentRank = index + 1;
-        const previousRank = prevRanks.get(c.id) || currentRank; // If first run, no movement
-        return { ...c, currentRank, previousRank };
-      });
-
-      // Update Prev Ranks for next run
-      const newPrevRanks = new Map(rankedCandidates.map(c => [c.id, c.currentRank]));
-      setPrevRanks(newPrevRanks);
-      
-      setCandidates(rankedCandidates);
-      setShowWinnerEffects(config.countdown_end_at > 0 && config.remaining_seconds <= 0);
-    } catch (err) {
-      console.error("Failed to fetch leaderboard data", err);
-    }
-  }, [prevRanks]);
-
   useEffect(() => {
-    fetchData(); // Initial
-    const interval = setInterval(fetchData, 2000); // Poll every 2s
-    return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Note: excluded fetchData from dependency to avoid loop if not memoized correctly, 
-  // but fetchData depends on prevRanks. 
-  // Actually, we can use a functional state update or ref for prevRanks to avoid re-creating the interval.
-  // Ref is better for "previous" tracking without re-triggering effect.
+    let cancelled = false;
+    let failures = 0;
+    let delayMs = 2000;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const { candidates: rawCandidates, config } = await api.getPrograms();
+        const sorted = [...rawCandidates].sort((a, b) => b.votes - a.votes);
+        const total = sorted.reduce((acc, c) => acc + c.votes, 0);
+        setTotalVotes(total);
+
+        const previous = prevRanksRef.current;
+        const rankedCandidates = sorted.map((c, index) => {
+          const currentRank = index + 1;
+          const previousRank = previous.get(c.id) || currentRank;
+          return { ...c, currentRank, previousRank };
+        });
+        prevRanksRef.current = new Map(rankedCandidates.map((c) => [c.id, c.currentRank]));
+
+        setCandidates(rankedCandidates);
+        setShowWinnerEffects(config.countdown_end_at > 0 && config.remaining_seconds <= 0);
+        failures = 0;
+        delayMs = 2000;
+      } catch (e) {
+        failures += 1;
+        delayMs = Math.min(8000, 2000 * Math.pow(2, Math.min(3, failures)));
+      } finally {
+        if (!cancelled) setTimeout(tick, delayMs);
+      }
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return <LeaderboardView candidates={candidates} totalVotes={totalVotes} showWinnerEffects={showWinnerEffects} />;
 };

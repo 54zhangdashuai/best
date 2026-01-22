@@ -13,6 +13,118 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json());
 
+const CONFIG_CACHE_MS = Number(process.env.CONFIG_CACHE_MS || 250);
+const PROGRAMS_CACHE_MS = Number(process.env.PROGRAMS_CACHE_MS || 250);
+
+type PublicConfig = {
+  vote_count_limit: number;
+  voting_enabled: boolean;
+  countdown_duration_seconds: number;
+  countdown_end_at: number;
+  remaining_seconds: number;
+};
+
+const dbAll = <T = any>(sql: string, params: any[] = []) =>
+  new Promise<T[]>((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve((rows || []) as T[]);
+    });
+  });
+
+const computeConfigFromSettings = (rows: Array<{ key: string; value: string }>): PublicConfig => {
+  const config: PublicConfig = {
+    vote_count_limit: 1,
+    voting_enabled: true,
+    countdown_duration_seconds: 120,
+    countdown_end_at: 0,
+    remaining_seconds: 0
+  };
+
+  for (const row of rows || []) {
+    if (row.key === 'vote_count_limit') config.vote_count_limit = parseInt(row.value, 10);
+    if (row.key === 'voting_enabled') config.voting_enabled = row.value === 'true';
+    if (row.key === 'countdown_duration_seconds') config.countdown_duration_seconds = parseInt(row.value, 10);
+    if (row.key === 'countdown_end_at') config.countdown_end_at = parseInt(row.value, 10);
+  }
+
+  if (config.countdown_end_at > 0) {
+    const now = Date.now();
+    config.remaining_seconds = Math.max(0, Math.floor((config.countdown_end_at - now) / 1000));
+  }
+
+  return config;
+};
+
+const configCache: {
+  expiresAt: number;
+  value: PublicConfig | null;
+  inflight: Promise<PublicConfig> | null;
+} = { expiresAt: 0, value: null, inflight: null };
+
+const programsCache: {
+  expiresAt: number;
+  value: { programs: any[]; config: PublicConfig } | null;
+  inflight: Promise<{ programs: any[]; config: PublicConfig }> | null;
+} = { expiresAt: 0, value: null, inflight: null };
+
+let voteTxnQueue: Promise<void> = Promise.resolve();
+const enqueueVoteTransaction = (fn: () => Promise<void>) => {
+  voteTxnQueue = voteTxnQueue.then(fn, fn);
+  return voteTxnQueue;
+};
+
+const invalidatePublicCaches = () => {
+  configCache.expiresAt = 0;
+  configCache.value = null;
+  programsCache.expiresAt = 0;
+  programsCache.value = null;
+};
+
+const getConfigCached = async (): Promise<PublicConfig> => {
+  const now = Date.now();
+  if (configCache.value && now < configCache.expiresAt) return configCache.value;
+  if (configCache.inflight) return configCache.inflight;
+
+  configCache.inflight = (async () => {
+    const rows = await dbAll<{ key: string; value: string }>("SELECT key, value FROM settings");
+    const config = computeConfigFromSettings(rows);
+    configCache.value = config;
+    configCache.expiresAt = Date.now() + CONFIG_CACHE_MS;
+    configCache.inflight = null;
+    return config;
+  })().catch((err) => {
+    configCache.inflight = null;
+    throw err;
+  });
+
+  return configCache.inflight;
+};
+
+const getProgramsAndConfigCached = async (): Promise<{ programs: any[]; config: PublicConfig }> => {
+  const now = Date.now();
+  if (programsCache.value && now < programsCache.expiresAt) return programsCache.value;
+  if (programsCache.inflight) return programsCache.inflight;
+
+  programsCache.inflight = (async () => {
+    const [programs, rows] = await Promise.all([
+      dbAll<any>("SELECT * FROM programs"),
+      dbAll<{ key: string; value: string }>("SELECT key, value FROM settings")
+    ]);
+    const config = computeConfigFromSettings(rows);
+    const value = { programs, config };
+    programsCache.value = value;
+    programsCache.expiresAt = Date.now() + PROGRAMS_CACHE_MS;
+    programsCache.inflight = null;
+    return value;
+  })().catch((err) => {
+    programsCache.inflight = null;
+    throw err;
+  });
+
+  return programsCache.inflight;
+};
+
 // Auth Middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers['authorization'];
@@ -35,53 +147,29 @@ app.get('/', (req, res) => {
 
 // Routes
 
+app.get('/api/config', async (req, res) => {
+  try {
+    const config = await getConfigCached();
+    res.json({ code: 0, data: { config } });
+  } catch (err: any) {
+    res.status(500).json({ code: 500, message: err?.message || 'Failed to load config' });
+  }
+});
+
 // 1. 获取节目列表 & 系统配置
-app.get('/api/programs', (req, res) => {
-  const sqlPrograms = "SELECT * FROM programs";
-  const sqlSettings = "SELECT key, value FROM settings";
-
-  db.all(sqlPrograms, [], (err, programs) => {
-    if (err) {
-      return res.status(500).json({ code: 500, message: err.message });
-    }
-    
-    db.all(sqlSettings, [], (err, rows: any[]) => {
-      if (err) {
-        return res.status(500).json({ code: 500, message: err.message });
+app.get('/api/programs', async (req, res) => {
+  try {
+    const { programs, config } = await getProgramsAndConfigCached();
+    res.json({
+      code: 0,
+      data: {
+        programs,
+        config
       }
-      
-      const config: any = {
-          vote_count_limit: 1,
-          voting_enabled: true,
-          countdown_duration_seconds: 120,
-          countdown_end_at: 0,
-          remaining_seconds: 0
-      };
-
-      if (rows) {
-          rows.forEach(row => {
-              if (row.key === 'vote_count_limit') config.vote_count_limit = parseInt(row.value);
-              if (row.key === 'voting_enabled') config.voting_enabled = row.value === 'true';
-              if (row.key === 'countdown_duration_seconds') config.countdown_duration_seconds = parseInt(row.value);
-              if (row.key === 'countdown_end_at') config.countdown_end_at = parseInt(row.value);
-          });
-      }
-
-      // Calculate remaining
-      if (config.countdown_end_at > 0) {
-          const now = Date.now();
-          config.remaining_seconds = Math.max(0, Math.floor((config.countdown_end_at - now) / 1000));
-      }
-      
-      res.json({
-        code: 0,
-        data: {
-          programs,
-          config
-        }
-      });
     });
-  });
+  } catch (err: any) {
+    res.status(500).json({ code: 500, message: err?.message || 'Failed to load programs' });
+  }
 });
 
 // 2. 批量投票
@@ -126,38 +214,88 @@ app.post('/api/vote', (req, res) => {
       return res.status(400).json({ code: 1002, message: `请选择 ${limit} 个节目进行投票` });
     }
 
-    // 2. 检查是否重复投票 (基于 ClientID 或 IP)
-    db.get("SELECT id FROM vote_records WHERE client_ip = ?", [userIdentifier], (err, row) => {
-      if (err) return res.status(500).json({ code: 500, message: err.message });
-      
-      if (row) {
-        return res.status(403).json({ code: 1001, message: "您已经投过票了" });
-      }
+    enqueueVoteTransaction(
+      () =>
+        new Promise<void>((done) => {
+          db.serialize(() => {
+            let responded = false;
+            let finished = false;
+            const finishOnce = () => {
+              if (finished) return;
+              finished = true;
+              done();
+            };
 
-      // 3. 执行投票事务
-      const stmtRecord = db.prepare("INSERT INTO vote_records (program_id, client_ip) VALUES (?, ?)");
-      const stmtUpdate = db.prepare("UPDATE programs SET vote_count = vote_count + 1 WHERE id = ?");
+            const replyOnce = (status: number, payload: any) => {
+              if (responded) return;
+              responded = true;
+              res.status(status).json(payload);
+              finishOnce();
+            };
 
-      db.serialize(() => {
-        db.run("BEGIN TRANSACTION");
-        
-        try {
-          programIds.forEach(pid => {
-            stmtRecord.run(pid, userIdentifier);
-            stmtUpdate.run(pid);
+            const rollbackAndReply = (payload: any) => {
+              db.run("ROLLBACK", () => replyOnce(500, payload));
+            };
+
+            db.run("BEGIN IMMEDIATE TRANSACTION", (err) => {
+              if (err) return replyOnce(500, { code: 500, message: err.message });
+
+              db.run("INSERT INTO vote_sessions (client_ip) VALUES (?)", [userIdentifier], (err: any) => {
+                if (err) {
+                  if (err.code === 'SQLITE_CONSTRAINT') {
+                    db.run("ROLLBACK", () => replyOnce(403, { code: 1001, message: "您已经投过票了" }));
+                    return;
+                  }
+                  return rollbackAndReply({ code: 500, message: err.message });
+                }
+
+                const userAgent = String(req.headers['user-agent'] || '');
+                const stmtRecord = db.prepare("INSERT INTO vote_records (program_id, client_ip, user_agent) VALUES (?, ?, ?)");
+                const placeholders = programIds.map(() => '?').join(',');
+
+                let pending = programIds.length + 1;
+                let failed = false;
+
+                const finishIfOk = () => {
+                  if (failed) return;
+                  pending -= 1;
+                  if (pending > 0) return;
+
+                  db.run("COMMIT", (err) => {
+                    stmtRecord.finalize();
+                    if (err) return replyOnce(500, { code: 500, message: err.message });
+                    invalidatePublicCaches();
+                    replyOnce(200, { code: 0, message: "投票成功" });
+                  });
+                };
+
+                const failOnce = (err: any) => {
+                  if (failed) return;
+                  failed = true;
+                  stmtRecord.finalize();
+                  rollbackAndReply({ code: 500, message: err?.message || "投票失败，请重试" });
+                };
+
+                db.run(
+                  `UPDATE programs SET vote_count = vote_count + 1 WHERE id IN (${placeholders})`,
+                  [...programIds],
+                  (err: Error | null) => {
+                    if (err) return failOnce(err);
+                    finishIfOk();
+                  }
+                );
+
+                programIds.forEach((pid: any) => {
+                  stmtRecord.run(pid, userIdentifier, userAgent, (err: Error | null) => {
+                    if (err) return failOnce(err);
+                    finishIfOk();
+                  });
+                });
+              });
+            });
           });
-          
-          db.run("COMMIT", () => {
-             stmtRecord.finalize();
-             stmtUpdate.finalize();
-             res.json({ code: 0, message: "投票成功" });
-          });
-        } catch (error) {
-          db.run("ROLLBACK");
-          res.status(500).json({ code: 500, message: "投票失败，请重试" });
-        }
-      });
-    });
+        })
+    );
   });
 });
 
@@ -191,6 +329,7 @@ app.post('/api/admin/settings', authenticateToken, (req, res) => {
         }
         db.run("COMMIT", () => {
             stmt.finalize();
+            invalidatePublicCaches();
             res.json({ code: 0, message: "规则已更新" });
         });
     } catch (error) {
@@ -218,6 +357,7 @@ app.post('/api/admin/start_vote', authenticateToken, (req, res) => {
                 
                 db.run("COMMIT", () => {
                     stmt.finalize();
+                    invalidatePublicCaches();
                     res.json({ code: 0, message: "投票已开始，倒计时启动" });
                 });
             } catch (error) {
@@ -232,10 +372,12 @@ app.post('/api/admin/start_vote', authenticateToken, (req, res) => {
 app.post('/api/admin/reset', authenticateToken, (req, res) => {
   db.serialize(() => {
     db.run("DELETE FROM vote_records");
+    db.run("DELETE FROM vote_sessions");
     db.run("UPDATE programs SET vote_count = 0");
     // 重置后开启投票，并重置倒计时
     db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('voting_enabled', 'true')");
     db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('countdown_end_at', '0')"); // Reset countdown
+    invalidatePublicCaches();
     res.json({ code: 0, message: "系统数据已重置" });
   });
 });
@@ -249,6 +391,7 @@ app.post('/api/admin/programs', authenticateToken, (req, res) => {
 
     db.run("INSERT INTO programs (title, performer, vote_count, color) VALUES (?, ?, 0, ?)", [title, performer, programColor], function(err) {
         if (err) return res.status(500).json({code: 500, message: err.message});
+        invalidatePublicCaches();
         res.json({ code: 0, data: { id: this.lastID, title, performer, vote_count: 0, color: programColor } });
     });
 });
@@ -257,6 +400,7 @@ app.delete('/api/admin/programs/:id', authenticateToken, (req, res) => {
     const { id } = req.params;
     db.run("DELETE FROM programs WHERE id = ?", [id], (err) => {
         if (err) return res.status(500).json({code: 500, message: err.message});
+        invalidatePublicCaches();
         res.json({ code: 0, message: "删除成功" });
     });
 });

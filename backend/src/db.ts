@@ -12,6 +12,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
     
     // 初始化表结构
     db.serialize(() => {
+      db.run(`PRAGMA journal_mode = WAL`);
+      db.run(`PRAGMA synchronous = NORMAL`);
+      db.run(`PRAGMA busy_timeout = 5000`);
+
       // 1. 系统配置表 (settings)
       db.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
@@ -35,6 +39,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
         program_id INTEGER NOT NULL,
         client_ip TEXT NOT NULL,
         user_agent TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS vote_sessions (
+        client_ip TEXT PRIMARY KEY,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`);
       

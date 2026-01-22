@@ -2,6 +2,7 @@
 
 **Base URL**: `/api`
 **Content-Type**: `application/json`
+**说明**：本文档补充了并发与缓存语义，面向“1 台大屏 + 300 人同时访问/投票”的生产场景。
 
 ## 1. 公共接口 (Public)
 
@@ -9,6 +10,9 @@
 获取所有节目及其当前票数，同时返回投票规则。
 
 *   **URL**: `GET /programs`
+*   **缓存语义（生产建议）**：
+    *   允许通过网关对该接口进行 **0.5s～1s 微缓存**（micro-cache），以吸收 300 人轮询造成的读压。
+    *   一致性为“最终一致”：投票成功后，榜单在下一次刷新（≤1s）可见即可。
 *   **Response**:
     ```json
     {
@@ -38,9 +42,13 @@
 *   **Body**:
     ```json
     {
-      "programIds": [1, 2, 3]
+      "programIds": [1, 2, 3],
+      "clientId": "a-uuid-from-localStorage"
     }
     ```
+*   **幂等/防重复**：
+    *   `clientId` 为客户端持久化生成的唯一标识，服务端以此作为“用户身份”判定是否已投票（优先于 IP，避免 NAT 误伤）。
+    *   同一 `clientId` 的重复提交（双击/重试/并发）应返回“已投票”，且不得重复计票。
 *   **Response (Success)**:
     ```json
     { "code": 0, "message": "投票成功" }
@@ -52,6 +60,10 @@
 *   **Response (Error)**:
     ```json
     { "code": 1001, "message": "您已经投过票了" }
+    ```
+*   **Response (Rate Limited)**:
+    ```json
+    { "code": 429, "message": "请求过于频繁，请稍后重试" }
     ```
 
 ### 1.3 管理员登录

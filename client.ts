@@ -80,6 +80,11 @@ export const api = {
     return { candidates, config: json.data.config };
   },
 
+  getConfig: async (): Promise<{ config: Config }> => {
+    const json = await fetchJson(`${API_BASE_URL}/config`);
+    return { config: json.data.config };
+  },
+
   // Batch Vote
   vote: async (programIds: number[]) => {
     // Generate or retrieve a unique Client ID for this browser
