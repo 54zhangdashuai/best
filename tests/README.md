@@ -52,6 +52,22 @@ k6 run -e TARGET=http://172.16.37.201/leaderboard -e VUS=300 -e POLL_INTERVAL_SE
 k6 run -e TARGET=http://172.16.37.201 -e MOBILE_VUS=300 -e CONFIG_POLL_INTERVAL_SECONDS=1 -e SCREEN_VUS=1 -e SCREEN_POLL_INTERVAL_SECONDS=2 -e VOTE_VUS=300 -e VOTE_START_TIME=15s -e RAMP_UP=10s -e SOAK=60s -e RAMP_DOWN=5s tests/load/k6_realistic_screen_vote_300users.js
 ```
 
+### 贴近真实（大屏 1 台 + 手机 300 人 + 分批次投票）
+
+将 300 人投票拆成三波写入（默认 100/100/100），用于观察“分时间段分批次写入”的整体稳定性与延迟。
+
+```bash
+k6 run -e TARGET=http://122.51.60.20 -e MOBILE_VUS=300 -e CONFIG_POLL_INTERVAL_SECONDS=1 -e SCREEN_VUS=1 -e SCREEN_POLL_INTERVAL_SECONDS=2 -e VOTE_W1_VUS=100 -e VOTE_W2_VUS=100 -e VOTE_W3_VUS=100 -e VOTE_W1_START=15s -e VOTE_W2_START=25s -e VOTE_W3_START=35s -e RAMP_UP=10s -e SOAK=60s -e RAMP_DOWN=5s tests/load/k6_realistic_screen_vote_300users_waves.js
+```
+
+### 1000 人 30s 内异步投票（尽量保证持续写入）
+
+该脚本模拟 1000 人打开投票页并轮询 `/api/config`，在 0~30s 内随机时刻提交投票（因此几乎每 2 秒都会有新的写入发生）。
+
+```bash
+k6 run -e TARGET=http://122.51.60.20 -e TOTAL_USERS=1000 -e WINDOW_SECONDS=30 -e CONFIG_POLL_INTERVAL_SECONDS=1 -e SCREEN_VUS=1 -e SCREEN_POLL_INTERVAL_SECONDS=2 tests/load/k6_1000users_30s_async_writes.js
+```
+
 ### k6 未安装时（Node 版简易压测）
 
 如果当前机器没有安装 k6，可用 Node（内置 fetch）跑一个“简易版”并发模拟，主要用于快速验证 300 人访问/投票时的错误率与延迟量级：

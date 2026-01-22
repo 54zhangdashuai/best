@@ -83,6 +83,7 @@ const BreathingBorder: React.FC<{ remaining: number; total: number }> = ({ remai
 // --- Global Layout with Countdown ---
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<Config | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [dismissedCountdownEndAt, setDismissedCountdownEndAt] = useState<number | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,6 +118,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, []);
+
+  const derivedRemainingSeconds = (() => {
+    if (!config) return 0;
+    if (config.countdown_end_at <= 0) return 0;
+    const diffMs = config.countdown_end_at - nowMs;
+    return Math.max(0, Math.ceil(diffMs / 1000));
+  })();
+
+  useEffect(() => {
     if (!config) return;
 
     if (config.countdown_end_at <= 0) {
@@ -130,7 +143,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       return;
     }
 
-    if (config.remaining_seconds > 0) {
+    if (derivedRemainingSeconds > 0) {
       if (finishTimeoutRef.current) {
         clearTimeout(finishTimeoutRef.current);
         finishTimeoutRef.current = null;
@@ -158,7 +171,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       setIsFinishing(false);
       finishTimeoutRef.current = null;
     }, 6500);
-  }, [config, dismissedCountdownEndAt]);
+  }, [config, dismissedCountdownEndAt, derivedRemainingSeconds]);
 
   const shouldShowCountdownUi =
     !!config && config.countdown_end_at > 0 && config.countdown_end_at !== dismissedCountdownEndAt;
@@ -200,11 +213,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <>
           {isLeaderboard && (
             <BreathingBorder 
-              remaining={config.remaining_seconds} 
+              remaining={derivedRemainingSeconds} 
               total={config.countdown_duration_seconds || 120} 
             />
           )}
-          <CountdownTimer remaining={config.remaining_seconds} fadeOut={isFinishing} />
+          <CountdownTimer remaining={derivedRemainingSeconds} fadeOut={isFinishing} />
         </>
       )}
       
