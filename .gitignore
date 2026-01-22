@@ -23,15 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local env files
-.env
-.env.*
-
-# SQLite / local data
-backend/data/
 *.sqlite
-*.sqlite3
-*.db
-
-# Load test artifacts
-tests/load/k6_summary_*.json
