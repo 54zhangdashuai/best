@@ -374,11 +374,16 @@ app.post('/api/admin/reset', authenticateToken, (req, res) => {
     db.run("DELETE FROM vote_records");
     db.run("DELETE FROM vote_sessions");
     db.run("UPDATE programs SET vote_count = 0");
-    // 重置后开启投票，并重置倒计时
     db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('voting_enabled', 'true')");
-    db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('countdown_end_at', '0')"); // Reset countdown
-    invalidatePublicCaches();
-    res.json({ code: 0, message: "系统数据已重置" });
+    // 使用最后一个操作的回调来发送响应，确保所有操作都已提交
+    db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('countdown_end_at', '0')", (err) => {
+      if (err) {
+        console.error('Reset failed:', err);
+        return res.status(500).json({ code: 500, message: "重置失败: " + err.message });
+      }
+      invalidatePublicCaches();
+      res.json({ code: 0, message: "系统数据已重置" });
+    });
   });
 });
 
