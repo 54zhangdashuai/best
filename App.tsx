@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Candidate, Config } from './types';
 import LeaderboardView from './components/LeaderboardView';
+import OldLeaderboardView from './components/OldLeaderboardView';
 import VotingView from './components/VotingView';
 import AdminView from './components/AdminView';
 import { api } from './client';
@@ -89,7 +90,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const finishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishingEndAtRef = useRef<number | null>(null);
   const location = useLocation();
-  const isLeaderboard = location.pathname === '/leaderboard' || location.pathname === '/screen';
+  const isLeaderboard = location.pathname === '/leaderboard' || location.pathname === '/screen' || location.pathname === '/old';
 
   useEffect(() => {
     let cancelled = false;
@@ -235,6 +236,7 @@ const App: React.FC = () => {
           <Route path="/vote" element={<VotingPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/screen" element={<LeaderboardPage />} />
+          <Route path="/old" element={<OldLeaderboardPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </Layout>
@@ -352,6 +354,60 @@ const LeaderboardPage: React.FC = () => {
       countdownEndAt={countdownEndAt}
       remainingSeconds={remainingSeconds}
       voteUrl={voteUrl}
+    />
+  );
+};
+
+const OldLeaderboardPage: React.FC = () => {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [totalVotes, setTotalVotes] = useState(0);
+  const prevRanksRef = useRef<Map<string, number>>(new Map());
+  const [showWinnerEffects, setShowWinnerEffects] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let failures = 0;
+    let delayMs = 2000;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const { candidates: rawCandidates, config } = await api.getPrograms();
+        const sorted = [...rawCandidates].sort((a, b) => b.votes - a.votes);
+        const total = sorted.reduce((acc, c) => acc + c.votes, 0);
+        setTotalVotes(total);
+
+        const previous = prevRanksRef.current;
+        const rankedCandidates = sorted.map((c, index) => {
+          const currentRank = index + 1;
+          const previousRank = previous.get(c.id) || currentRank;
+          return { ...c, currentRank, previousRank };
+        });
+        prevRanksRef.current = new Map(rankedCandidates.map((c) => [c.id, c.currentRank]));
+
+        setCandidates(rankedCandidates);
+        setShowWinnerEffects(config.countdown_end_at > 0 && config.countdown_end_at <= Date.now());
+        failures = 0;
+        delayMs = 2000;
+      } catch (e) {
+        failures += 1;
+        delayMs = Math.min(8000, 2000 * Math.pow(2, Math.min(3, failures)));
+      } finally {
+        if (!cancelled) setTimeout(tick, delayMs);
+      }
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <OldLeaderboardView
+      candidates={candidates}
+      totalVotes={totalVotes}
+      showWinnerEffects={showWinnerEffects}
     />
   );
 };
