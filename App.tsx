@@ -217,7 +217,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               total={config.countdown_duration_seconds || 120} 
             />
           )}
-          <CountdownTimer remaining={derivedRemainingSeconds} fadeOut={isFinishing} />
+          {!isLeaderboard && <CountdownTimer remaining={derivedRemainingSeconds} fadeOut={isFinishing} />}
         </>
       )}
       
@@ -234,6 +234,7 @@ const App: React.FC = () => {
           <Route path="/" element={<Navigate to="/vote" replace />} />
           <Route path="/vote" element={<VotingPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/screen" element={<LeaderboardPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </Layout>
@@ -291,6 +292,16 @@ const LeaderboardPage: React.FC = () => {
   const [totalVotes, setTotalVotes] = useState(0);
   const prevRanksRef = useRef<Map<string, number>>(new Map());
   const [showWinnerEffects, setShowWinnerEffects] = useState(false);
+  const [countdownEndAt, setCountdownEndAt] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, []);
+
+  const remainingSeconds =
+    countdownEndAt > 0 ? Math.max(0, Math.ceil((countdownEndAt - nowMs) / 1000)) : 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -301,6 +312,7 @@ const LeaderboardPage: React.FC = () => {
       if (cancelled) return;
       try {
         const { candidates: rawCandidates, config } = await api.getPrograms();
+        setCountdownEndAt(config.countdown_end_at);
         const sorted = [...rawCandidates].sort((a, b) => b.votes - a.votes);
         const total = sorted.reduce((acc, c) => acc + c.votes, 0);
         setTotalVotes(total);
@@ -314,7 +326,7 @@ const LeaderboardPage: React.FC = () => {
         prevRanksRef.current = new Map(rankedCandidates.map((c) => [c.id, c.currentRank]));
 
         setCandidates(rankedCandidates);
-        setShowWinnerEffects(config.countdown_end_at > 0 && config.remaining_seconds <= 0);
+        setShowWinnerEffects(config.countdown_end_at > 0 && config.countdown_end_at <= Date.now());
         failures = 0;
         delayMs = 2000;
       } catch (e) {
@@ -331,7 +343,17 @@ const LeaderboardPage: React.FC = () => {
     };
   }, []);
 
-  return <LeaderboardView candidates={candidates} totalVotes={totalVotes} showWinnerEffects={showWinnerEffects} />;
+  const voteUrl = typeof window !== 'undefined' ? `${window.location.origin}/vote` : '/vote';
+  return (
+    <LeaderboardView
+      candidates={candidates}
+      totalVotes={totalVotes}
+      showWinnerEffects={showWinnerEffects}
+      countdownEndAt={countdownEndAt}
+      remainingSeconds={remainingSeconds}
+      voteUrl={voteUrl}
+    />
+  );
 };
 
 const AdminPage: React.FC = () => {
